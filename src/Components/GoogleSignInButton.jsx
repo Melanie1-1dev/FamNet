@@ -1,9 +1,8 @@
 // GoogleSignInButton.jsx  -  save as src/Components/GoogleSignInButton.jsx
 import React, { useEffect, useRef, useState } from "react";
+import { db } from "@/api/db";
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-const USERS_KEY = "famnest:users";
-const SESSION_KEY = "famnest:session";
 
 let gsiPromise;
 function loadGoogleScript() {
@@ -28,29 +27,13 @@ function decodeJwt(token) {
   return JSON.parse(decodeURIComponent(Array.from(bin).map((c) => "%" + c.charCodeAt(0).toString(16).padStart(2, "0")).join("")));
 }
 
-function signInWithGoogleCredential(credential) {
+async function signInWithGoogleCredential(credential) {
   const c = decodeJwt(credential);
   const okIssuer = c.iss === "accounts.google.com" || c.iss === "https://accounts.google.com";
   if (!okIssuer || c.aud !== CLIENT_ID || !c.exp || c.exp * 1000 < Date.now()) throw new Error("Google sign-in could not be verified. Please try again.");
   if (!c.email || c.email_verified === false) throw new Error("Your Google email address is not verified.");
 
-  const email = c.email.trim().toLowerCase();
-  const users = JSON.parse(localStorage.getItem(USERS_KEY) || "[]");
-  let user = users.find((u) => u.email === email);
-  if (!user) {
-    user = {
-      id: crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + Math.random().toString(36).slice(2),
-      email,
-      full_name: c.name || email.split("@")[0],
-      picture: c.picture || null,
-      provider: "google",
-      role: users.length === 0 ? "admin" : "user",
-      created_date: new Date().toISOString(),
-    };
-    localStorage.setItem(USERS_KEY, JSON.stringify([...users, user]));
-  }
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ userId: user.id }));
-  return user;
+  return db.auth.loginWithGoogle({ email: c.email, full_name: c.name, picture: c.picture });
 }
 
 export default function GoogleSignInButton({ onSuccess, onError }) {
@@ -67,8 +50,8 @@ export default function GoogleSignInButton({ onSuccess, onError }) {
         if (cancelled || !boxRef.current) return;
         window.google.accounts.id.initialize({
           client_id: CLIENT_ID,
-          callback: (response) => {
-            try { cb.current.onSuccess?.(signInWithGoogleCredential(response.credential)); }
+          callback: async (response) => {
+            try { cb.current.onSuccess?.(await signInWithGoogleCredential(response.credential)); }
             catch (err) { cb.current.onError?.(err.message || "Google sign-in failed"); }
           },
         });
@@ -101,4 +84,4 @@ export default function GoogleSignInButton({ onSuccess, onError }) {
     );
   }
   return <div ref={boxRef} className="w-full flex justify-center min-h-[44px]" />;
-} 
+}

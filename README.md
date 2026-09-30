@@ -9,6 +9,10 @@ npm install
 npm run dev
 ```
 
+## Google sign-in
+
+Set `VITE_GOOGLE_CLIENT_ID` in `.env` to a Google OAuth 2.0 Web client ID, then restart Vite. Add each deployed site origin (and your local development origin) to the client's authorized JavaScript origins in Google Cloud Console. Google sign-in creates or signs into a local account in the current browser; this app has no backend, so accounts and data do not sync across devices.
+
 ## How data works
 
 - All data (users, families, tasks, finances, ...) is stored in the browser's `localStorage`, via `src/api/db.js`.

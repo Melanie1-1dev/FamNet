@@ -115,6 +115,27 @@ const auth = {
     return publicUser(user);
   },
 
+  async loginWithGoogle({ email, full_name, picture }) {
+    const e = normEmail(email);
+    if (!e) throw makeError("Google did not provide an email address", 400);
+    const list = users();
+    let user = list.find((u) => u.email === e);
+    if (!user) {
+      user = {
+        id: newId(),
+        email: e,
+        full_name: (full_name || "").trim() || e.split("@")[0],
+        picture: picture || null,
+        provider: "google",
+        role: list.length === 0 ? "admin" : "user",
+        created_date: new Date().toISOString(),
+      };
+      write("users", [...list, user]);
+    }
+    write("session", { userId: user.id });
+    return publicUser(user);
+  },
+
   async logout() {
     try { window.localStorage.removeItem(PREFIX + "session"); } catch { /* ignore */ }
   },

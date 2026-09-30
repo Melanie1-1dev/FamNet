@@ -35,6 +35,12 @@ export default function CalendarPage() {
 
   const submit = async (vals) => {
     await db.entities.FamilyEvent.create({ ...vals, family_id: familyId });
+    await db.entities.Notification.create({
+      family_id: familyId,
+      title: `New event: ${vals.title}`,
+      message: `${vals.title} is scheduled for ${formatDate(vals.date)}${vals.time ? ` at ${vals.time}` : ""}.`,
+      type: "event",
+    });
     close(); d.reload();
   };
 

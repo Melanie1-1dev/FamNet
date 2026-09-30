@@ -56,6 +56,16 @@ export default function Register() {
         <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>
       )}
 
+      <GoogleSignInButton
+        onSuccess={() => { window.location.href = returnTo; }}
+        onError={(message) => setError(message)}
+      />
+      <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="h-px flex-1 bg-border" />
+        <span>or sign up with email</span>
+        <span className="h-px flex-1 bg-border" />
+      </div>
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="name">Full name</Label>
