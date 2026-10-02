@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useContext, createContext, useRef } from "react";
 import { db } from "@/api/db";
+import { formatDate } from "@/lib/famNestUtils";
 
 const DataContext = createContext(null);
 
@@ -13,7 +14,7 @@ const EMPTY = {
 export function DataProvider({ familyId, children }) {
   const [data, setData] = useState(EMPTY);
   const [loading, setLoading] = useState(true);
-  const [clock, setClock] = useState(Date.now());
+  const [clock, setClock] = useState(0);
   const remindersInProgress = useRef(new Set());
 
   const load = useCallback(async () => {
