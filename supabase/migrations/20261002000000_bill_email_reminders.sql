@@ -41,7 +41,9 @@ alter table public.bill_reminder_deliveries enable row level security;
 create or replace function public.set_updated_at() returns trigger language plpgsql as $$
 begin new.updated_at = now(); return new; end;
 $$;
+drop trigger if exists bills_set_updated_at on public.bills;
 create trigger bills_set_updated_at before update on public.bills
   for each row execute function public.set_updated_at();
+drop trigger if exists bill_reminder_settings_set_updated_at on public.bill_reminder_settings;
 create trigger bill_reminder_settings_set_updated_at before update on public.bill_reminder_settings
   for each row execute function public.set_updated_at();
