@@ -30,9 +30,17 @@ async function query(path: string, key: string, init: RequestInit = {}) {
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return Response.json({ error: "POST required" }, { status: 405 });
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  let secretKeys: Record<string, string> = {};
+  try { secretKeys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}"); } catch { /* legacy projects may not expose the new key set */ }
+  const allowedCronKey = secretKeys.default || serviceKey;
   const resendKey = Deno.env.get("RESEND_API_KEY");
   const from = Deno.env.get("REMINDER_FROM_EMAIL");
   if (!serviceKey || !resendKey || !from) return Response.json({ error: "Missing server secrets" }, { status: 500 });
+  const suppliedApiKey = request.headers.get("apikey");
+  const suppliedLegacyBearer = request.headers.get("authorization");
+  if (suppliedApiKey !== allowedCronKey && suppliedLegacyBearer !== `Bearer ${serviceKey}`) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   try {
     const settings = await query("bill_reminder_settings?select=user_id,recipient_email,timezone&enabled=eq.true", serviceKey) as Array<{user_id:string;recipient_email:string;timezone:string}>;

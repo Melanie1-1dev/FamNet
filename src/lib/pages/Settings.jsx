@@ -1,14 +1,47 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { db } from "@/api/db";
 import { useFamily } from "@/lib/FamilyContext";
 import { useFamilyData } from "@/lib/useFamilyData";
 import { SectionCard, Badge } from "@/Components/uiBits";
-import { Trash2, AlertTriangle, Activity, Loader2 } from "lucide-react";
+import { Trash2, AlertTriangle, Activity, Loader2, Mail } from "lucide-react";
+import { Switch } from "@/Components/ui/switch";
+import { getReminderSettings, supabaseConfigured, updateReminderSettings } from "@/api/supabase";
 
 export default function Settings() {
   const { family, user, refresh } = useFamily();
   const d = useFamilyData();
   const [confirming, setConfirming] = useState(false);
+  const [reminderSettings, setReminderSettings] = useState(null);
+  const [reminderLoading, setReminderLoading] = useState(true);
+  const [reminderSaving, setReminderSaving] = useState(false);
+  const [reminderError, setReminderError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!supabaseConfigured || !user?.id) {
+      setReminderLoading(false);
+      return () => { cancelled = true; };
+    }
+    getReminderSettings(user.id)
+      .then((settings) => { if (!cancelled) setReminderSettings(settings); })
+      .catch((error) => { if (!cancelled) setReminderError(error.message || "Could not load reminder settings."); })
+      .finally(() => { if (!cancelled) setReminderLoading(false); });
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  const setBillRemindersEnabled = async (enabled) => {
+    if (!user?.id) return;
+    setReminderSaving(true);
+    setReminderError("");
+    try {
+      const updated = await updateReminderSettings(user.id, { enabled });
+      setReminderSettings(updated);
+    } catch (error) {
+      setReminderError(error.message || "Could not update reminder settings.");
+    } finally {
+      setReminderSaving(false);
+    }
+  };
 
   const clearDemo = async () => {
     if (!confirming) { setConfirming(true); return; }
@@ -48,6 +81,44 @@ export default function Settings() {
           <div className="flex justify-between"><span className="text-stone-400">Members</span><span className="font-medium text-stone-700 dark:text-stone-200">{d.members.length}</span></div>
           <div className="flex justify-between"><span className="text-stone-400">Demo data</span><Badge className={family?.is_demo ? "bg-amber-100 text-amber-700" : "bg-stone-100 text-stone-500"}>{family?.is_demo ? "Yes" : "No"}</Badge></div>
         </div>
+      </SectionCard>
+
+      <SectionCard title="Bill email reminders">
+        {!supabaseConfigured ? (
+          <div className="flex items-start gap-3 text-sm">
+            <Mail size={18} className="mt-0.5 text-stone-400" />
+            <div>
+              <div className="font-medium text-stone-700 dark:text-stone-200">Not connected</div>
+              <p className="mt-1 text-stone-400">Connect Supabase and configure the scheduled email service to enable bill reminders.</p>
+            </div>
+          </div>
+        ) : reminderLoading ? (
+          <div className="flex items-center gap-2 text-sm text-stone-400"><Loader2 size={16} className="animate-spin" /> Loading reminder settings…</div>
+        ) : reminderSettings ? (
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3 text-sm">
+              <Mail size={18} className="mt-0.5 text-emerald-600" />
+              <div>
+                <div className="flex items-center gap-2 font-medium text-stone-700 dark:text-stone-200">
+                  <span>{reminderSettings.enabled ? "Email reminders: On" : "Email reminders: Off"}</span>
+                  <Badge className={reminderSettings.enabled ? "bg-emerald-100 text-emerald-700" : "bg-stone-100 text-stone-500"}>{reminderSettings.enabled ? "Enabled" : "Paused"}</Badge>
+                </div>
+                <p className="mt-1 text-stone-400">{reminderSettings.enabled ? `Sending to ${reminderSettings.recipient_email} after 9:00 AM (${reminderSettings.timezone}).` : `Emails to ${reminderSettings.recipient_email} are paused.`}</p>
+                <p className="mt-1 text-stone-400">Only unpaid bills due today through three days ahead are included.</p>
+                <p className="mt-1 text-xs text-stone-400">Delivery also requires the Supabase email function and schedule to be deployed.</p>
+              </div>
+            </div>
+            <Switch
+              checked={!!reminderSettings.enabled}
+              onCheckedChange={setBillRemindersEnabled}
+              disabled={reminderSaving}
+              aria-label="Enable daily bill reminder emails"
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-stone-400">Reminder settings are not available. Apply the Supabase migration and sign in again.</p>
+        )}
+        {reminderError && <p role="alert" className="mt-3 text-sm text-red-600">{reminderError}</p>}
       </SectionCard>
 
       <SectionCard title="Account">

@@ -127,6 +127,17 @@ export async function supabaseData(table, query = "", { method = "GET", body, pr
 }
 
 export const currentSupabaseUserId = () => cachedSupabaseUser()?.id;
+export const getReminderSettings = async (userId) => {
+  if (!userId) return null;
+  const rows = await supabaseData("bill_reminder_settings", `select=user_id,recipient_email,enabled,timezone&user_id=eq.${encodeURIComponent(userId)}&limit=1`);
+  return rows[0] || null;
+};
+export const updateReminderSettings = async (userId, patch) => {
+  const rows = await supabaseData("bill_reminder_settings", `user_id=eq.${encodeURIComponent(userId)}`, {
+    method: "PATCH", body: patch,
+  });
+  return rows[0] || null;
+};
 export const reminderSettingsUpsert = async (user) => {
   if (!user?.id || !user?.email) return;
   await supabaseData("bill_reminder_settings", "on_conflict=user_id", {

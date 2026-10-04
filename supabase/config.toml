@@ -1,0 +1,2 @@
+[functions.daily-bill-reminders]
+verify_jwt = false
