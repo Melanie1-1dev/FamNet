@@ -2,6 +2,12 @@
 // Exposes: db.entities.<Name>.{filter,list,get,create,bulkCreate,update,bulkUpdate,delete,deleteMany},
 //          db.auth.{me,getCurrentUser,register,login,logout,resetPassword}, db.files.upload
 
+import {
+  cachedSupabaseUser, clearSupabaseSession, reminderSettingsUpsert,
+  requestPasswordReset, supabaseAuth, supabaseConfigured, supabaseData,
+  supabaseSession,
+} from "@/api/supabase";
+
 const PREFIX = "famnest:";
 
 const DEFAULTS = {
@@ -73,6 +79,7 @@ const users = () => read("users", []);
 const normEmail = (e) => String(e || "").trim().toLowerCase();
 
 function currentUserSync() {
+  if (supabaseConfigured) return cachedSupabaseUser();
   const session = read("session", null);
   if (!session) return null;
   return publicUser(users().find((u) => u.id === session.userId));
@@ -82,6 +89,13 @@ const auth = {
   getCurrentUser: currentUserSync,
 
   async me() {
+    if (supabaseConfigured) {
+      const session = await supabaseSession();
+      if (!session?.user) throw makeError("Not signed in", 401);
+      const user = cachedSupabaseUser();
+      try { await reminderSettingsUpsert(user); } catch (err) { console.warn("Bill email reminders are not configured yet", err); }
+      return user;
+    }
     const u = currentUserSync();
     if (!u) throw makeError("Not signed in", 401);
     return u;
@@ -91,6 +105,12 @@ const auth = {
     const e = normEmail(email);
     if (!e || !password) throw makeError("Email and password are required", 400);
     if (password.length < 6) throw makeError("Password must be at least 6 characters", 400);
+    if (supabaseConfigured) {
+      const { user, session } = await supabaseAuth("signup", { email: e, password, data: { full_name: (full_name || "").trim() } });
+      if (!session) throw makeError("Check your email to confirm your account, then sign in.", 202);
+      try { await reminderSettingsUpsert(user); } catch (err) { console.warn("Bill email reminders are not configured yet", err); }
+      return user;
+    }
     const list = users();
     if (list.some((u) => u.email === e)) throw makeError("An account with this email already exists", 409);
     const user = {
@@ -107,6 +127,11 @@ const auth = {
   },
 
   async login(email, password) {
+    if (supabaseConfigured) {
+      const { user } = await supabaseAuth("token?grant_type=password", { email: normEmail(email), password });
+      try { await reminderSettingsUpsert(user); } catch (err) { console.warn("Bill email reminders are not configured yet", err); }
+      return user;
+    }
     const user = users().find((u) => u.email === normEmail(email));
     if (!user || user.password_hash !== (await hashPassword(password))) {
       throw makeError("Invalid email or password", 401);
@@ -115,7 +140,13 @@ const auth = {
     return publicUser(user);
   },
 
-  async loginWithGoogle({ email, full_name, picture }) {
+  async loginWithGoogle({ email, full_name, picture, credential }) {
+    if (supabaseConfigured) {
+      if (!credential) throw makeError("Google credential is missing", 400);
+      const { user } = await supabaseAuth("token?grant_type=id_token", { provider: "google", id_token: credential });
+      try { await reminderSettingsUpsert(user); } catch (err) { console.warn("Bill email reminders are not configured yet", err); }
+      return user;
+    }
     const e = normEmail(email);
     if (!e) throw makeError("Google did not provide an email address", 400);
     const list = users();
@@ -137,11 +168,24 @@ const auth = {
   },
 
   async logout() {
+    if (supabaseConfigured) {
+      const session = await supabaseSession();
+      if (session?.access_token) {
+        const url = import.meta.env.VITE_SUPABASE_URL.replace(/\/$/, "");
+        await fetch(`${url}/auth/v1/logout`, { method: "POST", headers: { apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, Authorization: `Bearer ${session.access_token}` } }).catch(() => {});
+      }
+      clearSupabaseSession();
+      return;
+    }
     try { window.localStorage.removeItem(PREFIX + "session"); } catch { /* ignore */ }
   },
 
   // No email service exists, so a reset is done directly on this device.
   async resetPassword({ email, newPassword }) {
+    if (supabaseConfigured) {
+      if (newPassword && newPassword.length < 6) throw makeError("Password must be at least 6 characters", 400);
+      return requestPasswordReset(normEmail(email), newPassword);
+    }
     if (!newPassword || newPassword.length < 6) throw makeError("Password must be at least 6 characters", 400);
     const list = users();
     const idx = list.findIndex((u) => u.email === normEmail(email));
@@ -191,6 +235,23 @@ function sortRecords(list, sort) {
 function makeEntity(name) {
   const key = "entity:" + name;
   const all = () => read(key, []);
+  const remoteBills = name === "Bill" && supabaseConfigured;
+  const billFromRemote = (row) => ({ ...row, created_date: row.created_at, updated_date: row.updated_at });
+  const billToRemote = (row) => {
+    const { created_date, updated_date, created_by, created_by_id, ...bill } = row;
+    return { ...bill, ...(created_date ? { created_at: created_date } : {}), ...(updated_date ? { updated_at: updated_date } : {}) };
+  };
+  const billFilter = (query = {}) => {
+    const params = new URLSearchParams({ select: "*" });
+    const operators = { $ne: "neq", $in: "in", $gt: "gt", $gte: "gte", $lt: "lt", $lte: "lte" };
+    Object.entries(query).forEach(([field, value]) => {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const [op, arg] = Object.entries(value)[0] || [];
+        if (op && operators[op]) params.set(field, `${operators[op]}.${Array.isArray(arg) ? `(${arg.join(",")})` : arg}`);
+      } else params.set(field, `eq.${value}`);
+    });
+    return params.toString();
+  };
 
   const build = (data) => {
     const now = new Date().toISOString();
@@ -208,31 +269,59 @@ function makeEntity(name) {
 
   return {
     async filter(query, sort, limit) {
+      if (remoteBills) {
+        const params = new URLSearchParams(billFilter(query));
+        if (sort) params.set("order", `${sort.startsWith("-") ? sort.slice(1) : sort}.${sort.startsWith("-") ? "desc" : "asc"}`);
+        if (limit) params.set("limit", String(limit));
+        return (await supabaseData("bills", params.toString())).map(billFromRemote);
+      }
       let rows = sortRecords(all().filter((r) => matches(r, query)), sort);
       if (limit) rows = rows.slice(0, limit);
       return rows;
     },
     async list(sort, limit) {
+      if (remoteBills) return this.filter({}, sort, limit);
       let rows = sortRecords(all(), sort);
       if (limit) rows = rows.slice(0, limit);
       return rows;
     },
     async get(id) {
+      if (remoteBills) {
+        const rows = await supabaseData("bills", `select=*&id=eq.${encodeURIComponent(id)}&limit=1`);
+        if (!rows.length) throw makeError(`${name} not found`, 404);
+        return billFromRemote(rows[0]);
+      }
       const row = all().find((r) => r.id === id);
       if (!row) throw makeError(`${name} not found`, 404);
       return row;
     },
     async create(data) {
       const row = build(data);
+      if (remoteBills) {
+        const user = currentUserSync();
+        const rows = await supabaseData("bills", "", { method: "POST", body: billToRemote({ ...row, user_id: user.id }) });
+        return billFromRemote(rows[0]);
+      }
       write(key, [...all(), row]);
       return row;
     },
     async bulkCreate(items) {
       const rows = (items || []).map(build);
+      if (remoteBills) {
+        if (!rows.length) return [];
+        const user = currentUserSync();
+        const saved = await supabaseData("bills", "", { method: "POST", body: rows.map((row) => billToRemote({ ...row, user_id: user.id })) });
+        return saved.map(billFromRemote);
+      }
       write(key, [...all(), ...rows]);
       return rows;
     },
     async update(id, patch) {
+      if (remoteBills) {
+        const rows = await supabaseData("bills", `id=eq.${encodeURIComponent(id)}`, { method: "PATCH", body: { ...patch, updated_at: new Date().toISOString() } });
+        if (!rows.length) throw makeError(`${name} not found`, 404);
+        return billFromRemote(rows[0]);
+      }
       const rows = all();
       const idx = rows.findIndex((r) => r.id === id);
       if (idx === -1) throw makeError(`${name} not found`, 404);
@@ -241,6 +330,7 @@ function makeEntity(name) {
       return rows[idx];
     },
     async bulkUpdate(items) {
+      if (remoteBills) return Promise.all((items || []).map(({ id, ...patch }) => this.update(id, patch)));
       const rows = all();
       const now = new Date().toISOString();
       const updated = [];
@@ -254,14 +344,42 @@ function makeEntity(name) {
       return updated;
     },
     async delete(id) {
+      if (remoteBills) {
+        await supabaseData("bills", `id=eq.${encodeURIComponent(id)}`, { method: "DELETE", prefer: "return=minimal" });
+        return { success: true };
+      }
       write(key, all().filter((r) => r.id !== id));
       return { success: true };
     },
     async deleteMany(query) {
+      if (remoteBills) {
+        const params = new URLSearchParams(billFilter(query));
+        params.delete("select");
+        const deleted = await supabaseData("bills", params.toString(), { method: "DELETE" });
+        return { deleted: deleted?.length || 0 };
+      }
       const rows = all();
       const kept = rows.filter((r) => !matches(r, query));
       write(key, kept);
       return { deleted: rows.length - kept.length };
+    },
+    async importLocal(familyId) {
+      if (!remoteBills) return { imported: 0 };
+      const user = currentUserSync();
+      const marker = `bill-imported:${user.id}`;
+      if (read(marker, false)) return { imported: 0 };
+      const legacyBills = all().filter((bill) => bill.family_id === familyId);
+      let imported = 0;
+      if (legacyBills.length) {
+        const rows = legacyBills.map((bill) => ({
+          ...billToRemote({ ...bill, id: newId(), family_id: familyId }),
+          user_id: user.id,
+        }));
+        await supabaseData("bills", "", { method: "POST", body: rows });
+        imported = rows.length;
+      }
+      write(marker, true);
+      return { imported };
     },
   };
 }

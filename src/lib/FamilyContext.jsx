@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { db } from "@/api/db";
 import { DataProvider } from "@/lib/useFamilyData";
+import { supabaseConfigured } from "@/api/supabase";
 
 const FamilyContext = createContext(null);
 
@@ -18,6 +19,12 @@ export function FamilyProvider({ children }) {
       setUser(me);
       let fams = await db.entities.Family.filter({ created_by_id: me.id });
       let fam = fams[0];
+      // Keep this browser's existing family and linked local records when the
+      // owner signs in through Supabase with the same email address.
+      if (!fam && supabaseConfigured && me.email) {
+        const legacy = await db.entities.Family.filter({ created_by: me.email });
+        if (legacy[0]) fam = await db.entities.Family.update(legacy[0].id, { created_by_id: me.id });
+      }
       if (!fam) {
         fam = await db.entities.Family.create({ name: `${me.full_name || me.email || "My"} Family`, currency: "RWF", is_demo: true });
       }
@@ -32,6 +39,7 @@ export function FamilyProvider({ children }) {
           console.error("Demo data seeding failed", seedErr);
         }
       }
+      await db.entities.Bill.importLocal(fam.id);
       setFamily(fam);
       setMembers(mems);
     } catch (e) {

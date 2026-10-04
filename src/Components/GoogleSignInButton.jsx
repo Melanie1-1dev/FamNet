@@ -33,7 +33,7 @@ async function signInWithGoogleCredential(credential) {
   if (!okIssuer || c.aud !== CLIENT_ID || !c.exp || c.exp * 1000 < Date.now()) throw new Error("Google sign-in could not be verified. Please try again.");
   if (!c.email || c.email_verified === false) throw new Error("Your Google email address is not verified.");
 
-  return db.auth.loginWithGoogle({ email: c.email, full_name: c.name, picture: c.picture });
+  return db.auth.loginWithGoogle({ email: c.email, full_name: c.name, picture: c.picture, credential });
 }
 
 export default function GoogleSignInButton({ onSuccess, onError }) {
