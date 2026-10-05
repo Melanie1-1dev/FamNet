@@ -9,6 +9,10 @@
 
 Email delivery still requires the Resend provider, the deployed Edge Function, and the database schedule below.
 
+## Optional: Google sign-in
+
+Google sign-in needs a Google OAuth **Web application** client ID and a matching client ID/secret configured in Supabase **Authentication → Providers → Google**. Add the app's local and deployed origins in Google Cloud, plus your Supabase Auth callback URL (`https://YOUR_PROJECT_REF.supabase.co/auth/v1/callback`) as an authorized redirect URI. Put the Web client ID in the root `.env` as `VITE_GOOGLE_CLIENT_ID=...`, then restart the Vite dev server. Keep the Google client secret only in Supabase Auth provider settings; never put it in `.env` or client code. Until this is configured, the Google option is shown as unavailable and email/password sign-in remains available.
+
 ## 1. Configure Resend
 
 Create a Resend account, verify a sender domain, and create an API key. In the Supabase Dashboard, open **Edge Functions → Secrets** and add:
