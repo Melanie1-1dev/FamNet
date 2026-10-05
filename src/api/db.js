@@ -107,7 +107,7 @@ const auth = {
     if (password.length < 6) throw makeError("Password must be at least 6 characters", 400);
     if (supabaseConfigured) {
       const { user, session } = await supabaseAuth("signup", { email: e, password, data: { full_name: (full_name || "").trim() } });
-      if (!session) throw makeError("Check your email to confirm your account, then sign in.", 202);
+      if (!session) return { ...user, requiresEmailConfirmation: true };
       try { await reminderSettingsUpsert(user); } catch (err) { console.warn("Bill email reminders are not configured yet", err); }
       return user;
     }

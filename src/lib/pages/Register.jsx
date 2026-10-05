@@ -15,6 +15,7 @@ export default function Register() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
+  const [confirmationSent, setConfirmationSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const returnTo = safeReturnTo();
 
@@ -27,7 +28,12 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      await db.auth.register({ email, password, full_name: fullName });
+      const result = await db.auth.register({ email, password, full_name: fullName });
+      if (result?.requiresEmailConfirmation) {
+        setConfirmationSent(true);
+        setLoading(false);
+        return;
+      }
       window.location.href = returnTo;
     } catch (err) {
       setError(err.message || "Registration failed");
@@ -52,6 +58,13 @@ export default function Register() {
         </>
       }
     >
+      {confirmationSent ? (
+        <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <p className="font-medium">Account created. Check your email to confirm your address.</p>
+          <p className="mt-1">After confirming, return here and sign in with {email}.</p>
+          <Link to="/login" className="mt-3 inline-block font-medium underline">Go to login</Link>
+        </div>
+      ) : <>
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">{error}</div>
       )}
@@ -110,6 +123,7 @@ export default function Register() {
           )}
         </Button>
       </form>
+      </>}
     </AuthLayout>
   );
 }

@@ -21,7 +21,8 @@ function addDays(iso: string, days: number) {
 async function query(path: string, key: string, init: RequestInit = {}) {
   const response = await fetch(`${Deno.env.get("SUPABASE_URL")}/rest/v1/${path}`, {
     ...init,
-    headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...(init.headers || {}) },
+    // Supabase secret API keys are accepted via `apikey`; they are not JWT bearer tokens.
+    headers: { apikey: key, "Content-Type": "application/json", ...(init.headers || {}) },
   });
   if (!response.ok) throw new Error(`Supabase returned ${response.status}: ${await response.text()}`);
   return response.status === 204 ? null : response.json();
@@ -29,21 +30,22 @@ async function query(path: string, key: string, init: RequestInit = {}) {
 
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return Response.json({ error: "POST required" }, { status: 405 });
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const legacyServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   let secretKeys: Record<string, string> = {};
   try { secretKeys = JSON.parse(Deno.env.get("SUPABASE_SECRET_KEYS") || "{}"); } catch { /* legacy projects may not expose the new key set */ }
-  const allowedCronKey = secretKeys.default || serviceKey;
+  const databaseKey = secretKeys.default || legacyServiceKey;
+  const allowedCronKey = databaseKey;
   const resendKey = Deno.env.get("RESEND_API_KEY");
   const from = Deno.env.get("REMINDER_FROM_EMAIL");
-  if (!serviceKey || !resendKey || !from) return Response.json({ error: "Missing server secrets" }, { status: 500 });
+  if (!databaseKey || !resendKey || !from) return Response.json({ error: "Missing server secrets" }, { status: 500 });
   const suppliedApiKey = request.headers.get("apikey");
   const suppliedLegacyBearer = request.headers.get("authorization");
-  if (suppliedApiKey !== allowedCronKey && suppliedLegacyBearer !== `Bearer ${serviceKey}`) {
+  if (suppliedApiKey !== allowedCronKey && suppliedLegacyBearer !== `Bearer ${legacyServiceKey}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const settings = await query("bill_reminder_settings?select=user_id,recipient_email,timezone&enabled=eq.true", serviceKey) as Array<{user_id:string;recipient_email:string;timezone:string}>;
+    const settings = await query("bill_reminder_settings?select=user_id,recipient_email,timezone&enabled=eq.true", databaseKey) as Array<{user_id:string;recipient_email:string;timezone:string}>;
     let sent = 0;
     for (const setting of settings) {
       const now = new Date();
@@ -51,9 +53,9 @@ Deno.serve(async (request: Request) => {
       if (hourInZone(now, timezone) < 9) continue;
       const today = dateInZone(now, timezone);
       const lastDay = addDays(today, 3);
-      const prior = await query(`bill_reminder_deliveries?select=user_id&user_id=eq.${encodeURIComponent(setting.user_id)}&reminder_date=eq.${today}`, serviceKey) as unknown[];
+      const prior = await query(`bill_reminder_deliveries?select=user_id&user_id=eq.${encodeURIComponent(setting.user_id)}&reminder_date=eq.${today}`, databaseKey) as unknown[];
       if (prior.length) continue;
-      const bills = await query(`bills?select=name,amount,currency,due_date,category&user_id=eq.${encodeURIComponent(setting.user_id)}&status=neq.paid&due_date=gte.${today}&due_date=lte.${lastDay}&order=due_date.asc`, serviceKey) as Array<{name:string;amount:number;currency:string;due_date:string;category?:string}>;
+      const bills = await query(`bills?select=name,amount,currency,due_date,category&user_id=eq.${encodeURIComponent(setting.user_id)}&status=neq.paid&due_date=gte.${today}&due_date=lte.${lastDay}&order=due_date.asc`, databaseKey) as Array<{name:string;amount:number;currency:string;due_date:string;category?:string}>;
       if (!bills.length) continue;
 
       const items = bills.map((bill) => {
@@ -65,7 +67,7 @@ Deno.serve(async (request: Request) => {
         body: JSON.stringify({ from, to: [setting.recipient_email], subject: `FamNest: ${bills.length} bill${bills.length === 1 ? "" : "s"} due within 3 days`, html: `<h1>Upcoming bills</h1><p>Unpaid bills due ${escapeHtml(today)} through ${escapeHtml(lastDay)}:</p><ul>${items}</ul><p>Sent by FamNest.</p>` }),
       });
       if (!email.ok) throw new Error(`Email provider returned ${email.status}: ${await email.text()}`);
-      await query("bill_reminder_deliveries", serviceKey, {
+      await query("bill_reminder_deliveries", databaseKey, {
         method: "POST", headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
         body: JSON.stringify({ user_id: setting.user_id, reminder_date: today }),
       });

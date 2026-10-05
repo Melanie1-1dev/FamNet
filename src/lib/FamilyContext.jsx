@@ -44,7 +44,10 @@ export function FamilyProvider({ children }) {
       setMembers(mems);
     } catch (e) {
       console.error("Family load error", e);
-      setError(e?.message || "Could not load your family");
+      const message = e?.message || "Could not load your family";
+      setError(message.includes("public.bills") && message.includes("schema cache")
+        ? "Supabase is connected, but FamNest’s bill tables haven’t been created yet. Run the SQL in supabase/migrations/20261002000000_bill_email_reminders.sql in your Supabase project’s SQL Editor, then select Try again."
+        : message);
     } finally {
       setLoading(false);
     }
