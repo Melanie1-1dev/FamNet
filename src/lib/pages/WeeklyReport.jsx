@@ -6,7 +6,6 @@ import { RWF } from "@/lib/famNestUtils";
 import { ArrowLeft, ArrowRight, BarChart3, CheckCircle2, PiggyBank, Wallet, ClipboardCheck } from "lucide-react";
 
 const atLocalMidnight = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
-const dateKey = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const dateLabel = (date) => date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 
 function parseRecordDate(value) {
@@ -69,18 +68,15 @@ export default function WeeklyReport() {
     return {
       start,
       end,
-      endExclusive,
       completedLogs,
-      weeklyExpenses,
       totalSpent: weeklyExpenses.reduce((sum, item) => sum + Number(item.amount || 0), 0),
       totalBudget: [...budgetByCategory.values()].reduce((sum, value) => sum + value, 0),
       categories,
-      contributions,
       totalContributed: contributions.reduce((sum, item) => sum + Number(item.amount || 0), 0),
     };
   }, [d.activity, d.budgets, d.expenses, d.savingsContributions, weekOffset]);
 
-  if (d.loading) return <div className="flex justify-center py-20"><div className="animate-spin text-emerald-600">◌</div></div>;
+  if (d.loading) return <div className="flex justify-center py-20"><ClipboardCheck className="animate-pulse text-emerald-600" /></div>;
 
   const balance = report.totalBudget - report.totalSpent;
   const periodLabel = `${dateLabel(report.start)} – ${dateLabel(report.end)}`;
