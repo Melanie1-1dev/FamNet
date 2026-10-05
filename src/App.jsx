@@ -25,6 +25,7 @@ import Documents from '@/lib/pages/Documents';
 import Requests from '@/lib/pages/Requests';
 import Notifications from '@/lib/pages/Notifications';
 import Analytics from '@/lib/pages/Analytics';
+import WeeklyReport from '@/lib/pages/WeeklyReport';
 import SettingsPage from '@/lib/pages/Settings';
 import SearchPage from '@/lib/pages/Search';
 import Login from '@/lib/pages/Login';
@@ -58,6 +59,7 @@ const AuthenticatedApp = () => {
           <Route path="/requests" element={<Requests />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/analytics" element={<Analytics />} />
+          <Route path="/reports/weekly" element={<WeeklyReport />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/search" element={<SearchPage />} />
         </Route>

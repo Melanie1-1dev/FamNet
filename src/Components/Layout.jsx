@@ -5,7 +5,7 @@ import QuickAdd from "@/Components/QuickAdd";
 import {
   Home, Users, ClipboardList, CheckSquare, Calendar, Wallet,
   ShoppingCart, Target, FileText, Bell, BarChart3, Settings,
-  Menu, X, Plus, Search, LogOut
+  Menu, X, Plus, Search, LogOut, ClipboardCheck
 } from "lucide-react";
 import { db } from "@/api/db";
 
@@ -21,6 +21,7 @@ const NAV = [
   { to: "/documents", label: "Documents", icon: FileText },
   { to: "/notifications", label: "Notifications", icon: Bell },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
+  { to: "/reports/weekly", label: "Weekly Report", icon: ClipboardCheck },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

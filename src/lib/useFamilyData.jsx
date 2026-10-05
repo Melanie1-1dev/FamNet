@@ -40,7 +40,7 @@ export function DataProvider({ familyId, children }) {
         db.entities.FamilyRequest.filter({ family_id: familyId }),
         db.entities.Document.filter({ family_id: familyId }),
         db.entities.Notification.filter({ family_id: familyId }),
-        db.entities.ActivityLog.filter({ family_id: familyId }, "-created_date", 50),
+        db.entities.ActivityLog.filter({ family_id: familyId }, "-created_date"),
         db.entities.FamilyMember.filter({ family_id: familyId }),
       ]);
       setData({ requirements, tasks, income, expenses, savingsGoals, savingsContributions, financialGoals, budgets, bills, events, shoppingItems, requests, documents, notifications, activity, members });

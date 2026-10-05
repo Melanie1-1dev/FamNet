@@ -5,9 +5,10 @@ import { useFamily } from "@/lib/FamilyContext";
 import { useFamilyData } from "@/lib/useFamilyData";
 import FinanceNav from "@/Components/FinanceNav";
 import FormModal from "@/Components/FormModal";
-import { SectionCard, ProgressBar, EmptyState, Badge } from "@/Components/uiBits";
+import { SectionCard, ProgressBar, EmptyState, Badge, StatCard } from "@/Components/uiBits";
 import { RWF, formatDate } from "@/lib/famNestUtils";
-import { Plus, PiggyBank, Trash2, Loader2 } from "lucide-react";
+import { Plus, PiggyBank, Trash2, Loader2, TrendingUp, Target } from "lucide-react";
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 const FIELDS = [
   { name: "name", label: "Goal Name", required: true, placeholder: "e.g. Emergency Fund" },
@@ -32,6 +33,26 @@ export default function Savings() {
   const [open, setOpen] = useState(false);
   const [contribFor, setContribFor] = useState(null);
 
+  const savingsTrend = React.useMemo(() => {
+    const currentMonth = new Date();
+    currentMonth.setDate(1);
+    currentMonth.setHours(0, 0, 0, 0);
+    const months = [];
+    for (let offset = 5; offset >= 0; offset -= 1) {
+      const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - offset, 1);
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      months.push({ key, name: date.toLocaleDateString("en-GB", { month: "short" }) });
+    }
+    let cumulative = 0;
+    return months.map((month) => {
+      const amount = d.savingsContributions
+        .filter((item) => String(item.date || "").slice(0, 7) === month.key)
+        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      cumulative += amount;
+      return { ...month, amount, total: cumulative };
+    });
+  }, [d.savingsContributions]);
+
   useEffect(() => { if (params.get("new") === "saving") setOpen(true); }, [params]);
   const close = () => { setOpen(false); params.delete("new"); setParams(params); };
 
@@ -53,7 +74,10 @@ export default function Savings() {
 
   if (d.loading) return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-emerald-600" /></div>;
 
-  const emergency = d.savingsGoals.find((g) => g.category === "emergency");
+  const totalSaved = d.savingsGoals.reduce((sum, goal) => sum + Number(goal.current_amount || 0), 0);
+  const totalTarget = d.savingsGoals.reduce((sum, goal) => sum + Number(goal.target_amount || 0), 0);
+  const recentGrowth = savingsTrend.reduce((sum, month) => sum + month.amount, 0);
+  const hasRecentContributions = savingsTrend.some((month) => month.amount > 0);
 
   return (
     <div className="space-y-5 max-w-4xl mx-auto">
@@ -63,39 +87,58 @@ export default function Savings() {
         <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold"><Plus size={18} /> New Goal</button>
       </div>
 
-      {emergency && (
-        <SectionCard title="Emergency Fund" className="bg-gradient-to-br from-sky-50 to-blue-50 dark:from-stone-900 dark:to-stone-900">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-stone-500">{RWF(emergency.current_amount)} of {RWF(emergency.target_amount)}</span>
-            <Badge className="bg-sky-100 text-sky-700">{Math.round(emergency.current_amount / emergency.target_amount * 100)}%</Badge>
-          </div>
-          <ProgressBar value={emergency.current_amount} max={emergency.target_amount} tone="sky" />
-          <div className="text-xs text-stone-400 mt-2">Remaining: {RWF(emergency.target_amount - emergency.current_amount)}</div>
-        </SectionCard>
-      )}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <StatCard label="Saved across goals" value={RWF(totalSaved)} icon={PiggyBank} tone="savings" />
+        <StatCard label="Combined goal targets" value={RWF(totalTarget)} icon={Target} />
+        <StatCard label="Contributed in 6 months" value={RWF(recentGrowth)} icon={TrendingUp} tone="income" />
+      </div>
+
+      <SectionCard title="Savings growth" className="overflow-hidden">
+        <p className="mb-3 text-xs text-stone-400">Cumulative contributions recorded in the last six months. Starting balances without contribution records are not included in this trend.</p>
+        {!hasRecentContributions ? <EmptyState icon={TrendingUp} title="No recent contributions recorded" subtitle="Add a contribution to a goal to see your savings growth here." /> : (
+          <ResponsiveContainer width="100%" height={260}>
+            <AreaChart data={savingsTrend} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
+              <defs>
+                <linearGradient id="savingsGrowthFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e7e5e4" />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(value) => `${Math.round(value / 1000)}k`} width={42} />
+              <Tooltip formatter={(value) => RWF(value)} contentStyle={{ borderRadius: 12 }} />
+              <Area type="monotone" dataKey="total" name="Cumulative contributions" stroke="#0284c7" strokeWidth={2.5} fill="url(#savingsGrowthFill)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </SectionCard>
 
       {d.savingsGoals.length === 0 ? (
         <SectionCard><EmptyState icon={PiggyBank} title="No savings goals" subtitle="Create a goal to start saving." /></SectionCard>
       ) : (
         <div className="grid sm:grid-cols-2 gap-4">
           {d.savingsGoals.map((g) => {
-            const pct = g.target_amount > 0 ? Math.round((g.current_amount / g.target_amount) * 100) : 0;
-            const contribs = d.savingsContributions.filter((c) => c.savings_goal_id === g.id);
+            const current = Number(g.current_amount || 0);
+            const target = Number(g.target_amount || 0);
+            const pct = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+            const contribs = d.savingsContributions.filter((c) => c.savings_goal_id === g.id).sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
             return (
               <SectionCard key={g.id}>
                 <div className="flex items-start justify-between">
                   <div>
                     <div className="font-semibold text-stone-800 dark:text-stone-100">{g.name}</div>
-                    <Badge className="bg-stone-100 text-stone-500 capitalize mt-1">{g.category.replace("_", " ")}</Badge>
+                    <Badge className="bg-stone-100 text-stone-500 capitalize mt-1">{String(g.category || "custom").replaceAll("_", " ")}</Badge>
                   </div>
                   <button onClick={() => del(g)} className="text-stone-300 hover:text-red-500"><Trash2 size={16} /></button>
                 </div>
                 <div className="flex items-center justify-between mt-3 mb-1.5">
-                  <span className="text-sm text-stone-500">{RWF(g.current_amount)} / {RWF(g.target_amount)}</span>
+                  <span className="text-sm text-stone-500">{RWF(current)} / {RWF(target)}</span>
                   <span className="text-sm font-semibold text-sky-600">{pct}%</span>
                 </div>
-                <ProgressBar value={g.current_amount} max={g.target_amount} tone="sky" />
-                {g.deadline && <div className="text-xs text-stone-400 mt-2">Deadline: {formatDate(g.deadline)}</div>}
+                <ProgressBar value={current} max={target} tone="sky" />
+                <div className="mt-1.5 text-xs text-stone-400">{RWF(Math.max(0, target - current))} remaining</div>
+                {g.deadline && <div className="text-xs text-stone-400 mt-1">Deadline: {formatDate(g.deadline)}</div>}
                 {contribs.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-stone-100 dark:border-stone-800">
                     <div className="text-xs text-stone-400 mb-1">Recent contributions</div>
