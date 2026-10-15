@@ -13,6 +13,7 @@ const FIELDS = [
   { name: "description", label: "Description", type: "textarea" },
   { name: "date", label: "Date", type: "date", required: true },
   { name: "time", label: "Time", type: "time" },
+  { name: "recipient_email", label: "Notification email", type: "email" },
   { name: "type", label: "Type", type: "select", options: ["appointment", "school", "birthday", "bill", "meeting", "holiday", "task", "other"] },
 ];
 
@@ -34,6 +35,19 @@ export default function CalendarPage() {
   const close = () => { setOpen(false); params.delete("new"); setParams(params); };
 
   const submit = async (vals) => {
+    if (vals.type === "appointment" && vals.recipient_email) {
+      const scheduledAt = new Date(`${vals.date}T${vals.time || "09:00"}`).toISOString();
+      try {
+        const response = await fetch("/api/appointments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ family_id: familyId, title: vals.title, description: vals.description, scheduled_at: scheduledAt, recipient_email: vals.recipient_email }),
+        });
+        if (!response.ok) throw new Error("Appointment API unavailable");
+      } catch (error) {
+        console.info("Appointment API unavailable; retaining browser-only calendar behavior.", error);
+      }
+    }
     await db.entities.FamilyEvent.create({ ...vals, family_id: familyId });
     close(); d.reload();
   };

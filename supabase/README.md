@@ -1,5 +1,7 @@
 # FamNest bill email reminders
 
+> Appointment notification backend setup is documented in the project root `README.md`. Its `20261015000000_appointments.sql` migration is plain PostgreSQL and is separate from the Supabase bill reminder schema below.
+
 ## What is already configured
 
 - Supabase Auth is used when the root `.env` contains the `VITE_SUPABASE_*` values.
